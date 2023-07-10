@@ -15,5 +15,4 @@ config:
     - https://arbitrum-goerli.blockpi.network/v1/rpc/public 
   zkpayment: "0xb6C9f0CE324d7CF88E570CD1870796c6D85714dA"
   startblock: 29890389  
-    # - https://eth-sepolia.public.blastapi.io
     
