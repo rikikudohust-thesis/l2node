@@ -1,0 +1,15 @@
+internal/pkg/zkey/*
+!internal/pkg/zkey/.keep
+internal/pkg/wasm/*
+!internal/pkg/wasm/.keep
+.env.local
+internal/pkg/txsets
+data
+syncDB/*
+!syncDB/.keep
+stateDB/*
+!stateDB/.keep
+L2DB/txSelDB/*
+L2DB/syncTxDB/*
+!L2DB/txSelDB/.keep
+!L2DB/syncTxDB/.keep
