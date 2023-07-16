@@ -4,6 +4,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model/nonce"
 	"github.com/rikikudohust-thesis/l2node/pkg/context"
@@ -23,6 +24,75 @@ func SetupRouter(router *gin.RouterGroup, db *gorm.DB, r model.IService) {
 	router.GET("/transactions", getTx(db))
 }
 
+func postTxVer2(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := context.New(c).WithLogPrefix("post-transactions-v2-api")
+		var receivedTx PoolL2Tx
+		if err := c.ShouldBindJSON(&receivedTx); err != nil {
+			ctx.Infof("failed to bin params, err: %v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+		byteSignRaw, err := hex.DecodeString(receivedTx.Signature)
+		if err != nil {
+			ctx.Infof("failed to decode signature, err:%v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+
+		var byteSign [64]byte
+		copy(byteSign[:], byteSignRaw)
+		amount := new(big.Int)
+		amountBI, validAmount := amount.SetString(receivedTx.Amount, 10)
+		if !validAmount {
+			ctx.Errorf("invalid amount, err:%v", err)
+			ctx.AbortWith400("invalid amount")
+			return
+		}
+		pooll2tx := model.PoolL2Tx{
+			FromIdx:   receivedTx.FromIdx,
+			ToEthAddr: receivedTx.ToEthAddr,
+			Amount:    amountBI,
+			TokenID:   receivedTx.TokenID,
+			Nonce:     receivedTx.Nonce,
+			Type:      model.TxType(receivedTx.Type),
+			State:     model.PoolL2TxStatePending,
+			Signature: byteSign,
+		}
+
+		if err := pooll2tx.SetID(); err != nil {
+			ctx.Infof("failed to Set id, err: %v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+
+		if err := pooll2tx.SetType(); err != nil {
+			ctx.Infof("failed to set type, err: &v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+
+		valid, err := validationL2Tx(ctx, db, pooll2tx)
+		if err != nil {
+			ctx.Infof("failed to validate tx, err: %v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+
+		if !valid {
+			ctx.Infoln("failed to validate tx")
+			return
+		}
+
+		if err := storeL2Tx(ctx, db, pooll2tx); err != nil {
+			ctx.Infof("failed to store tx, err: %v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+
+	}
+}
+
 func postTx(db *gorm.DB) gin.HandlerFunc {
 	return func(c *gin.Context) {
 		ctx := context.New(c).WithLogPrefix("post-transactions-api")
@@ -33,6 +103,8 @@ func postTx(db *gorm.DB) gin.HandlerFunc {
 			ctx.AbortWith400(err.Error())
 			return
 		}
+
+    ctx.Infof("receive: %+v", receivedTx)
 		byteSignRaw, err := hex.DecodeString(receivedTx.Signature)
 		if err != nil {
 			ctx.Infof("failed to decode signature, err:%v", err)
@@ -63,11 +135,17 @@ func postTx(db *gorm.DB) gin.HandlerFunc {
 			State:     model.PoolL2TxStatePending,
 			Signature: byteSign,
 		}
-    if err := pooll2tx.SetID(); err != nil {
+		if err := pooll2tx.SetID(); err != nil {
 			ctx.Infof("failed to Set id, err: %v", err)
 			ctx.AbortWith400(err.Error())
 			return
-    }
+		}
+
+		if err := pooll2tx.SetType(); err != nil {
+			ctx.Infof("failed to set type, err: &v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
 
 		valid, err := validationL2Tx(ctx, db, pooll2tx)
 		if err != nil {
@@ -104,8 +182,6 @@ func validationL2Tx(ctx context.Context, db *gorm.DB, tx model.PoolL2Tx) (bool, 
 	}
 
 	account, err := getAccount(ctx, db, tx.FromIdx)
-	fmt.Printf("bjj : %v\n", account.BJJ.String())
-	fmt.Printf("signature: %v\n", tx.Signature.String())
 	if err != nil {
 		ctx.Errorf("failed to get account, err: %v", err)
 		return false, err
@@ -127,16 +203,25 @@ func validationL2Tx(ctx context.Context, db *gorm.DB, tx model.PoolL2Tx) (bool, 
 
 	switch tx.Type {
 	case model.TxTypeTransfer:
+		// var toAccount *model.Account
+		// if tx.ToEthAddr != model.EmptyAddr {
+		// 	toAccount, err = getAccountByEthAddrAndToken(ctx, db, &tx.ToEthAddr, tx.TokenID)
+		// 	if err != nil {
+		// 		ctx.Errorf("failed to get to account, err: %v", err)
+		// 		return false, err
+		// 	}
+		// } else {
 		toAccount, err := getAccount(ctx, db, tx.ToIdx)
 		if err != nil {
 			ctx.Errorf("failed to get to account, err: %v", err)
 			return false, err
+			// }
 		}
+
 		if tx.TokenID != toAccount.TokenID {
 			return false, fmt.Errorf("tx.TokenID (%v) != account.TokenID(%v)", tx.TokenID, toAccount.TokenID)
 		}
-  case model.TxTypeExit:
-
+	case model.TxTypeExit:
 	}
 
 	return true, nil
@@ -206,7 +291,7 @@ func storeL2Tx(ctx context.Context, db *gorm.DB, tx model.PoolL2Tx) error {
 		atomicGroupID = &tx.AtomicGroupID
 	}
 
-  info := "l2tx"
+	info := "l2tx"
 	txStore := &PoolL2TxStore{
 		TxID:          tx.TxID,
 		FromIdx:       tx.FromIdx,
@@ -277,4 +362,43 @@ func getAccount(ctx context.Context, db *gorm.DB, idx model.Idx) (*model.Account
 		Nonce:    account.Nonce,
 		Balance:  balanceBI,
 	}, nil
+}
+
+func getAccountByEthAddrAndToken(ctx context.Context, db *gorm.DB, ethAddr *common.Address, tokenID model.TokenID) (*model.Account, error) {
+	type fullAccount struct {
+		Idx      model.Idx
+		TokenID  model.TokenID
+		BatchNum model.BatchNum
+		BJJ      babyjub.PublicKeyComp
+		EthAddr  common.Address
+		Nonce    nonce.Nonce
+		Balance  string `gorm:"type:numeric"`
+	}
+
+	account := &fullAccount{}
+	queryRaw := `SELECT distinct on (a.idx) a.idx, a.token_id, a.batch_num, a.bjj, 
+			a.eth_addr, coalesce(au.nonce, '0') as nonce, coalesce(au.balance, '0') as balance
+		FROM accounts_l2 a
+	    LEFT JOIN account_updates_l2 au
+			ON a.idx = au.idx
+	   	WHERE a.eth_addr = ? and a.token_id = ?
+	   	ORDER BY a.idx, au.eth_block_num desc;
+  `
+
+	if err := db.Raw(queryRaw, ethAddr, tokenID).Find(account).Error; err != nil {
+		ctx.Errorf("faild to full account data, err: %v", err)
+		return nil, err
+	}
+
+	balanceBI, _ := new(big.Int).SetString(account.Balance, 10)
+	return &model.Account{
+		Idx:      account.Idx,
+		TokenID:  account.TokenID,
+		BatchNum: account.BatchNum,
+		BJJ:      account.BJJ,
+		EthAddr:  account.EthAddr,
+		Nonce:    account.Nonce,
+		Balance:  balanceBI,
+	}, nil
+
 }

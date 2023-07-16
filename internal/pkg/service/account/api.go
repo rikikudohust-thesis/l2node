@@ -12,8 +12,7 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	accountRawQuery = `
+const accountRawQuery = `
 SELECT accounts_l2.item_id, accounts_l2.idx as idx, accounts_l2.batch_num, 
 	accounts_l2.bjj, accounts_l2.eth_addr, tokens.token_id, tokens.item_id AS token_item_id, tokens.eth_block_num AS token_block,
 	tokens.eth_addr as token_eth_addr, tokens.name, tokens.symbol, tokens.decimals, 
@@ -25,11 +24,25 @@ SELECT accounts_l2.item_id, accounts_l2.idx as idx, accounts_l2.batch_num,
 		FROM account_updates_l2
 		WINDOW w as (PARTITION BY idx ORDER BY item_id DESC)
 	) AS account_updates_l2 ON account_updates_l2.idx = accounts_l2.idx INNER JOIN tokens ON accounts_l2.token_id = tokens.token_id `
-)
+const accountEthQueryRaw = `
+SELECT accounts_l2.item_id, accounts_l2.idx as idx, accounts_l2.batch_num, 
+	accounts_l2.bjj, accounts_l2.eth_addr, tokens.token_id, tokens.item_id AS token_item_id, tokens.eth_block_num AS token_block,
+	tokens.eth_addr as token_eth_addr, tokens.name, tokens.symbol, tokens.decimals, 
+	account_updates_l2.nonce, account_updates_l2.balance, COUNT(*) OVER() AS total_items
+	FROM accounts_l2 INNER JOIN (
+		SELECT DISTINCT idx,
+		first_value(nonce) OVER w AS nonce,
+		first_value(balance) OVER w AS balance
+		FROM account_updates_l2
+		WINDOW w as (PARTITION BY idx ORDER BY item_id DESC)
+	) AS account_updates_l2 ON account_updates_l2.idx = accounts_l2.idx INNER JOIN tokens ON accounts_l2.token_id = tokens.token_id 
+  WHERE accounts_l2.token_id = ? AND accounts_l2.eth_addr = ?
+  `
 
 func SetupRouter(router *gin.RouterGroup, db *gorm.DB, r model.IService) {
 	router.GET("/accounts", getAccounts(db))
-  router.GET("/accounts/:idx", getAccountByIndex(db))
+	router.GET("/accounts/:idx", getAccountByIndex(db))
+	router.GET("/accountsEth", getAccountByEthAddrAndTokenID((db)))
 }
 
 func getAccounts(db *gorm.DB) gin.HandlerFunc {
@@ -74,6 +87,52 @@ func getAccounts(db *gorm.DB) gin.HandlerFunc {
 
 		var accounts []*accountAPI
 		if err := db.Raw(queryRaw, args...).Find(&accounts).Error; err != nil {
+			ctx.Errorf("failed to find accounts, err: %v", err)
+			ctx.AbortWith500(err.Error())
+			return
+		}
+
+		accountResponses := make([]*accountResponse, 0, len(accounts))
+		for _, account := range accounts {
+			accountResponses = append(accountResponses, &accountResponse{
+				ItemID:       account.ItemID,
+				Idx:          account.Idx,
+				BatchNum:     account.BatchNum,
+				BJJ:          model.BjjToString(account.BJJ),
+				EthAddr:      account.EthAddr,
+				TokenID:      account.TokenID,
+				TokenBlock:   account.TokenBlock,
+				TokenEthAddr: account.TokenEthAddr,
+				Name:         account.Name,
+				Symbol:       account.Symbol,
+				Decimals:     account.Decimals,
+				Nonce:        account.Nonce,
+				Balance:      account.Balance,
+				TotalItems:   account.TotalItems,
+			})
+		}
+
+		ctx.RespondWith(http.StatusOK, "success", accountResponses)
+	}
+}
+
+func getAccountByEthAddrAndTokenID(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := context.New(c).WithLogPrefix("get-accounts-api")
+
+		var p struct {
+			EthAddr *string `form:"ethAddr"`
+			TokenID *uint64 `form:"tokenID"`
+		}
+
+		if err := ctx.ShouldBindQuery(&p); err != nil {
+			ctx.Errorf("failed to bind params, err: %v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+
+		var accounts []*accountAPI
+		if err := db.Raw(accountEthQueryRaw, p.TokenID, common.HexToAddress(*p.EthAddr)).Find(&accounts).Error; err != nil {
 			ctx.Errorf("failed to find accounts, err: %v", err)
 			ctx.AbortWith500(err.Error())
 			return

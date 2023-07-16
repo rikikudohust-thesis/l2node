@@ -14,11 +14,12 @@ import (
 	"encoding/json"
 	"fmt"
 
+	"time"
+
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/database/statedb"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/service/txprocessor"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/utils"
-	"time"
 
 	"github.com/iden3/go-rapidsnark/prover"
 	"github.com/iden3/go-rapidsnark/witness"
@@ -94,7 +95,7 @@ func NewJob(cfg *model.JobConfig, db *gorm.DB, r model.IService, sdb *statedb.St
 }
 
 func (j *job) Run(ctx context.Context) {
-	// j.sdb.Reset(3)
+	// j.sdb.Reset(11)
 	// return
 	c, existed := configs[j.globalCfg.ChainID]
 	if !existed {
@@ -162,11 +163,11 @@ func (j *job) process(ctx context.Context) {
 	// 	}
 	// 	pooll2txs = append(pooll2txs, pooll2tx...)
 	// }
-  l1txs, pooll2txs, err := j.getBatchTxs(ctx, currentBatch + 1)
-  if err != nil {
-    fmt.Printf("failed to get txs of batch %d\n", currentBatch + 1)
-    return
-  }
+	l1txs, pooll2txs, err := j.getBatchTxs(ctx, currentBatch+1)
+	if err != nil {
+		fmt.Printf("failed to get txs of batch %d\n", currentBatch+1)
+		return
+	}
 
 	if err := j.forgeBatchOnChain(ctx, l1txs, pooll2txs, blockInfo.IsL1); err != nil {
 		fmt.Printf("failed to forge batch on chain, err: %v\n", err)

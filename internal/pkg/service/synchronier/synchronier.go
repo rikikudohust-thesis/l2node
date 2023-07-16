@@ -57,7 +57,7 @@ func (j *job) Run(ctx context.Context) {
 		j.process(ctx)
     fmt.Println("done, elapsed: ", time.Since(start))
 		// time.Sleep(time.Duration(j.localCfg.JobIntervalSec) * time.Second)
-		// time.Sleep(time.Duration(500) * time.Millisecond)
+		time.Sleep(time.Duration(300) * time.Millisecond)
 
 	}
 }
