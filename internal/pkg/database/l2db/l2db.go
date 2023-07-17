@@ -3,15 +3,26 @@ package l2db
 import (
 	"fmt"
 	"math/big"
+	"time"
+
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model/nonce"
-	"time"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/iden3/go-iden3-crypto/babyjub"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
+
+const queryTxRaw = `
+select txes.id, l2.*, a_to.eth_addr as receiver, a_from.eth_addr as sender, txes.batch_num as l1_batch from 
+txes full outer join 
+(select txes_l2.id as tx_hash, txes_l2.type as tx_type ,txes_l2.is_l1 as "type" , tx_pool.state as "state" ,txes_l2.from_eth_addr, txes_l2.from_idx, txes_l2.to_idx, txes_l2.token_id, txes_l2.deposit_amount as deposit_amount, txes_l2.amount as amount, txes_l2.batch_num as batch  from txes_l2 full outer join tx_pool on txes_l2.id = tx_pool.tx_id) as l2
+on txes.id = l2.tx_hash
+left join accounts_l2 as a_to on a_to.idx = l2.to_idx
+left join accounts_l2 as a_from on a_from.idx = l2.from_idx
+where l2.from_eth_addr = ? or a_from.eth_addr = ? or a_to.eth_addr = ?
+`
 
 type PoolL2TxStore struct {
 	// Stored in DB: mandatory fields
@@ -66,6 +77,7 @@ type PoolL2TxStore struct {
 }
 
 func StorePoolL2Txs(db *gorm.DB, txs []model.PoolL2Tx) error {
+	fmt.Println("HERE")
 	l2txs := make([]PoolL2TxStore, 0, len(txs))
 	for i := range txs {
 		// Format extra DB fields and nullables
@@ -161,7 +173,7 @@ func StorePoolL2Txs(db *gorm.DB, txs []model.PoolL2Tx) error {
 			AtomicGroupID: atomicGroupID,
 			MaxNumBatch:   maxNumBatch,
 		})
-	} 
+	}
 
 	if len(l2txs) > 0 {
 		query := db.Clauses(clause.OnConflict{
@@ -207,11 +219,19 @@ func AddExitTree(db *gorm.DB, exittree []model.ExitInfo, batchNum model.BatchNum
 }
 
 func GetExitTree(db *gorm.DB, idx model.Idx) ([]*model.ExitInfoGorm, error) {
-  var eig []*model.ExitInfoGorm
-  query := db.Table("exit_trees")
-  query = query.Where("account_idx = ?", idx)
-  if err := query.Find(&eig).Error; err != nil {
-    return nil, err
-  }
-  return eig, nil
+	var eig []*model.ExitInfoGorm
+	query := db.Table("exit_trees")
+	query = query.Where("account_idx = ?", idx)
+	if err := query.Find(&eig).Error; err != nil {
+		return nil, err
+	}
+	return eig, nil
+}
+
+func GetTx(db *gorm.DB, ethAddr *common.Address) ([]*model.TransactionResponse, error) {
+	var txs []*model.TransactionResponse
+  if err := db.Raw(queryTxRaw, ethAddr, ethAddr, ethAddr).Find(&txs).Error; err != nil {
+		return nil, err
+	}
+	return txs, nil
 }

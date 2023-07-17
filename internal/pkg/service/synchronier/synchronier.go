@@ -7,6 +7,7 @@ import (
 	"math/big"
 	"time"
 
+	"github.com/rikikudohust-thesis/l2node/internal/pkg/database/l2db"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/database/statedb"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/utils"
@@ -52,10 +53,10 @@ func (j *job) Run(ctx context.Context) {
 	j.localCfg = &c
 	j.processor = txprocessor.NewTxProcessor(j.sdb, j.localCfg.Cfg)
 	for {
-    start := time.Now()
-    fmt.Println("Starting")
+		start := time.Now()
+		fmt.Println("Starting")
 		j.process(ctx)
-    fmt.Println("done, elapsed: ", time.Since(start))
+		fmt.Println("done, elapsed: ", time.Since(start))
 		// time.Sleep(time.Duration(j.localCfg.JobIntervalSec) * time.Second)
 		time.Sleep(time.Duration(300) * time.Millisecond)
 
@@ -92,23 +93,23 @@ func (j *job) process(ctx context.Context) {
 		return
 	}
 
-  currentBatch := j.sdb.CurrentBatch()
+	currentBatch := j.sdb.CurrentBatch()
 	rollupData, syncedBlock, err := j.rollupSync(ctx, &ethBlock)
 	if err != nil {
 		fmt.Printf("failed to sync rollup, err %v\n", err)
-    j.sdb.Reset(currentBatch)
+		j.sdb.Reset(currentBatch)
 		return
 	}
 	fmt.Printf("synced: %v\n", syncedBlock)
 	if err := j.save(ctx, rollupData); err != nil {
 		fmt.Printf("failed to save rollup data, err: %v\n", err)
-    j.sdb.Reset(currentBatch)
+		j.sdb.Reset(currentBatch)
 		return
 	}
 
 	if err := j.r.Set(ctx, syncingBlockCacheKey, syncedBlock+1, 0); err != nil && !model.IsNilErr(err) {
 		fmt.Printf("failed to set synced, err: %v \n", err)
-    j.sdb.Reset(currentBatch)
+		j.sdb.Reset(currentBatch)
 		return
 	}
 }
@@ -208,15 +209,6 @@ func (j *job) rollupSync(ctx context.Context, ethBlock *model.Block) (*model.Rol
 			fmt.Printf("failed to process txs, err: %v\n", err)
 			return nil, 0, err
 		}
-
-		// if j.sdb.CurrentBatch() != model.BatchNum(batchNum) {
-		// 	fmt.Printf("current not equal, currentBatch: %d, batchNum: %d\n", j.sdb.CurrentBatch(), batchNum)
-		// 	return nil, 0, fmt.Errorf("current not equal, currentBatch: %d, batchNum: %d", j.sdb.CurrentBatch(), batchNum)
-		// }
-		// if j.sdb.MT.Root().BigInt().Cmp(forgeBatchArgs.NewStRoot) != 0 {
-		// 	fmt.Printf("root not equal, root: %v, newStRoot: %v\n", j.sdb.MT.Root().String(), forgeBatchArgs.NewStRoot.String())
-		// 	return nil, 0, fmt.Errorf("root not equal, root: %v, newStRoot: %v", j.sdb.MT.Root().String(), forgeBatchArgs.NewStRoot.String())
-		// }
 
 		l2Txs := make([]model.L2Tx, len(poolL2Txs))
 		for i, tx := range poolL2Txs {
@@ -448,6 +440,8 @@ func (j *job) RollupForgeBatchArgs(ctx context.Context, ethTxHash common.Hash, l
 	} else if err := method.Inputs.Copy(&aux, values); err != nil {
 		return nil, nil, err
 	}
+	fmt.Printf("txData: %X\n", txData[4:])
+	fmt.Printf("aux: %+v\n", aux)
 	rollupForgeBatchArgs := RollupForgeBatchArgs{
 		L1Batch:               aux.L1Batch,
 		NewExitRoot:           aux.NewExitRoot,
@@ -469,6 +463,12 @@ func (j *job) RollupForgeBatchArgs(ctx context.Context, ethTxHash common.Hash, l
 	numTxsL1Coord := len(aux.EncodedL1CoordinatorTx) / model.RollupConstL1CoordinatorTotalBytes
 	numBytesL1TxCoord := numTxsL1Coord * lenL1L2TxsBytes
 	numBeginL2Tx := numBytesL1TxCoord + numBytesL1TxUser
+	fmt.Printf("len: %v", len(aux.L1L2TxsData))
+	fmt.Printf("LEN L1L2: %v\n", lenL1L2TxsBytes)
+	fmt.Printf("NUM BYTES L1: %v\n", numBytesL1TxUser)
+	fmt.Printf("NUM BYTES L1 COORD: %v\n", numTxsL1Coord)
+	fmt.Printf("NUM BYTES L2: %v\n", numBeginL2Tx)
+
 	l1UserTxsData := []byte{}
 	if l1UserTxsLen > 0 {
 		l1UserTxsData = aux.L1L2TxsData[:numBytesL1TxUser]
@@ -477,6 +477,7 @@ func (j *job) RollupForgeBatchArgs(ctx context.Context, ethTxHash common.Hash, l
 	for i := 0; i < int(l1UserTxsLen); i++ {
 		l1Tx, err := model.L1TxFromDataAvailability(l1UserTxsData[i*lenL1L2TxsBytes:(i+1)*lenL1L2TxsBytes], uint32(nlevels))
 		if err != nil {
+			fmt.Printf("failed to convert data availability to l1")
 			return nil, nil, err
 		}
 
@@ -489,12 +490,14 @@ func (j *job) RollupForgeBatchArgs(ctx context.Context, ethTxHash common.Hash, l
 	}
 
 	numTxsL2 := len(l2TxsData) / lenL1L2TxsBytes
+	fmt.Printf("numTxsL2: %+v\n", numTxsL2)
 	for i := 0; i < numTxsL2; i++ {
 		l2Tx, err := model.L2TxFromBytesDataAvailability(l2TxsData[i*lenL1L2TxsBytes:(i+1)*lenL1L2TxsBytes], int(nlevels))
 		if err != nil {
 			return nil, nil, err
 		}
 
+		fmt.Printf("l2data: %+v\n", *l2Tx)
 		rollupForgeBatchArgs.L2TxsData = append(rollupForgeBatchArgs.L2TxsData, *l2Tx)
 	}
 
@@ -671,7 +674,6 @@ func (j *job) save(ctx context.Context, rollupData *model.RollupData) error {
 			}
 		}
 
-		fmt.Printf("forged l1: %+v\n", batch.L1UserTxs)
 		if len(batch.L1UserTxs) != 0 {
 
 			forged_txs := make([]model.Tx, 0, len(batch.L1UserTxs))
@@ -722,12 +724,12 @@ func (j *job) save(ctx context.Context, rollupData *model.RollupData) error {
 
 		//update l2 txs
 		l2txs := batch.L2Txs
-		txsL2 := make([]*model.Tx, len(batch.L2Txs))
+		txsL2 := make([]model.Tx, 0, len(batch.L2Txs))
 		pooll2txs := model.L2TxsToPoolL2Txs(l2txs)
 		for i := 0; i < len(batch.L2Txs); i++ {
 			f := new(big.Float).SetInt(l2txs[i].Amount)
 			amountFloat, _ := f.Float64()
-			txsL2 = append(txsL2, &model.Tx{
+			txsL2 = append(txsL2, model.Tx{
 				IsL1:     false,
 				TxID:     l2txs[i].TxID,
 				Type:     l2txs[i].Type,
@@ -750,10 +752,12 @@ func (j *job) save(ctx context.Context, rollupData *model.RollupData) error {
 		queryAddL2Txs := tx.Clauses(clause.OnConflict{
 			DoNothing: true,
 		})
-		if err := queryAddL2Txs.CreateInBatches(txsL2, len(txsL2)).Error; err != nil {
-			fmt.Printf("failed to save l2tx, %v\n", err)
-			tx.Rollback()
-			return err
+		if len(txsL2) > 0 {
+			if err := queryAddL2Txs.Create(txsL2).Error; err != nil {
+				fmt.Printf("failed to save l2tx, %v\n", err)
+				tx.Rollback()
+				return err
+			}
 		}
 
 		//update pooll2tx
@@ -762,10 +766,12 @@ func (j *job) save(ctx context.Context, rollupData *model.RollupData) error {
 			DoUpdates: clause.AssignmentColumns([]string{"state"}),
 		})
 
-		if err := queryUpdatePoolL2Tx.Table("tx_pool").CreateInBatches(pooll2txs, len(pooll2txs)).Error; err != nil {
-			fmt.Printf("failed to save pool_l2_txes %v\n", err)
-			tx.Rollback()
-			return err
+		if len(pooll2txs) > 0 {
+			if err := l2db.StorePoolL2Txs(queryUpdatePoolL2Tx, pooll2txs); err != nil {
+				fmt.Printf("failed to save pool_l2_txes %v\n", err)
+				tx.Rollback()
+				return err
+			}
 		}
 	}
 
@@ -802,9 +808,9 @@ func (j *job) getUnforgedL1UserTxs(nextForgeL1TxsNum uint64) ([]model.L1Tx, erro
 	if err := query.Find(&txs).Error; err != nil {
 		return []model.L1Tx{}, err
 	}
-  l1txs := make([]model.L1Tx, 0, len(txs))
-  for _, l1g := range txs {
-    l1txs = append(l1txs, *l1g.ToL1Tx())
-  }  
+	l1txs := make([]model.L1Tx, 0, len(txs))
+	for _, l1g := range txs {
+		l1txs = append(l1txs, *l1g.ToL1Tx())
+	}
 	return l1txs, nil
 }
