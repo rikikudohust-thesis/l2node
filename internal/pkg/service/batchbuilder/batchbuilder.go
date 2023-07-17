@@ -419,13 +419,18 @@ func (j *job) getBatchTxs(ctx context.Context, batchNum model.BatchNum) ([]model
 		l1txs = append(l1txs, *l1g.ToL1Tx())
 	}
 	var txsGorm []*model.PoolL2TxGorm
-	queryPoolL2Tx := j.db.Select(`tx_pool.tx_id, from_idx, to_idx, tx_pool.to_eth_addr, 
-tx_pool.to_bjj, tx_pool.token_id, tx_pool.amount, tx_pool.fee, tx_pool.nonce, 
-tx_pool.state, tx_pool.info, tx_pool.signature, tx_pool.timestamp, rq_from_idx, 
-rq_to_idx, tx_pool.rq_to_eth_addr, tx_pool.rq_to_bjj, tx_pool.rq_token_id, tx_pool.rq_amount, 
-tx_pool.rq_fee, tx_pool.rq_nonce, tx_pool.tx_type, tx_pool.rq_offset, tx_pool.atomic_group_id, tx_pool.max_num_batch`)
-	queryPoolL2Tx = queryPoolL2Tx.Table("tx_pool INNER JOIN tokens ON tx_pool.token_id = tokens.token_id")
-	queryPoolL2Tx = queryPoolL2Tx.Where("state = ? and batch_num = ?", model.PoolL2TxStateForging, batchNum)
+	// 	queryPoolL2Tx := j.db.Select(`tx_pool.tx_id, from_idx, to_idx, tx_pool.to_eth_addr,
+	// tx_pool.to_bjj, tx_pool.token_id, tx_pool.amount, tx_pool.fee, tx_pool.nonce,
+	// tx_pool.state, tx_pool.info, tx_pool.signature, tx_pool.timestamp, rq_from_idx,
+	// rq_to_idx, tx_pool.rq_to_eth_addr, tx_pool.rq_to_bjj, tx_pool.rq_token_id, tx_pool.rq_amount,
+	// tx_pool.rq_fee, tx_pool.rq_nonce, tx_pool.tx_type, tx_pool.rq_offset, tx_pool.atomic_group_id, tx_pool.max_num_batch`)
+	queryPoolL2Tx := j.db.Table(`(SELECT tx_pool.item_id, tx_pool.tx_id, from_idx, to_idx, tx_pool.to_eth_addr,
+tx_pool.to_bjj, tx_pool.token_id, tx_pool.amount, tx_pool.fee, tx_pool.nonce,
+tx_pool.state, tx_pool.info, tx_pool.signature, tx_pool.timestamp, rq_from_idx,
+rq_to_idx, tx_pool.rq_to_eth_addr, tx_pool.rq_to_bjj, tx_pool.rq_token_id, tx_pool.rq_amount,
+tx_pool.rq_fee, tx_pool.rq_nonce, tx_pool.tx_type, tx_pool.rq_offset, tx_pool.atomic_group_id, tx_pool.max_num_batch FROM tx_pool INNER JOIN tokens ON tx_pool.token_id = tokens.token_id WHERE state = 'fing') as tx_pool
+inner join txes_l2 on txes_l2.id = tx_pool.tx_id`)
+	queryPoolL2Tx = queryPoolL2Tx.Where("batch_num = ?", batchNum)
 	queryPoolL2Tx = queryPoolL2Tx.Order("tx_pool.item_id")
 
 	if err := queryPoolL2Tx.Find(&txsGorm).Error; err != nil {
@@ -469,8 +474,6 @@ func (j *job) forgeBatchOnChain(ctx context.Context, l1txs []model.L1Tx, pooll2t
 		fmt.Printf("failed to process txs, %v\n", err)
 		return err
 	}
-	fmt.Printf("output: %+v\n", output1.ZKInputs)
-
 	proofSV := NewProofService()
 	proofData0, _, err := proofSV.CalculateProof(output1.ZKInputs)
 	if err != nil {

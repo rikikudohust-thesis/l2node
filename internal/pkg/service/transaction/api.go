@@ -4,10 +4,12 @@ import (
 	"encoding/hex"
 	"fmt"
 	"math/big"
+	"net/http"
 
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model/nonce"
 	"github.com/rikikudohust-thesis/l2node/pkg/context"
+  "github.com/rikikudohust-thesis/l2node/internal/pkg/database/l2db"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/gin"
@@ -21,7 +23,7 @@ const (
 
 func SetupRouter(router *gin.RouterGroup, db *gorm.DB, r model.IService) {
 	router.POST("/transactions", postTx(db))
-	router.GET("/transactions", getTx(db))
+	router.GET("/transactions", getPoolTx(db))
 }
 
 func postTxVer2(db *gorm.DB) gin.HandlerFunc {
@@ -104,7 +106,7 @@ func postTx(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-    ctx.Infof("receive: %+v", receivedTx)
+		ctx.Infof("receive: %+v", receivedTx)
 		byteSignRaw, err := hex.DecodeString(receivedTx.Signature)
 		if err != nil {
 			ctx.Infof("failed to decode signature, err:%v", err)
@@ -401,4 +403,43 @@ func getAccountByEthAddrAndToken(ctx context.Context, db *gorm.DB, ethAddr *comm
 		Balance:  balanceBI,
 	}, nil
 
+}
+
+func getPoolTx(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := context.New(c).WithLogPrefix("get-transaction-api")
+		var query struct {
+			TokenID             *uint  `form:"tokenId"`
+			HezEthereumAddr     string `form:"hezEthereumAddress"`
+			FromHezEthereumAddr string `form:"fromHezEthereumAddress"`
+			ToHezEthereumAddr   string `form:"toHezEthereumAddress"`
+			Bjj                 string `form:"BJJ"`
+			FromBjj             string `form:"fromBJJ"`
+			ToBjj               string `form:"toBJJ"`
+			AccountIndex        string `form:"accountIndex"`
+			FromAccountIndex    string `form:"fromAccountIndex"`
+			ToAccountIndex      string `form:"toAccountIndex"`
+			TxType              string `form:"type"`
+			State               string `form:"state"`
+			Pagination          struct {
+				FromItem *uint   `form:"fromItem"`
+				Order    *string `form:"order,default=ASC" binding:"omitempty,oneof=ASC DESC"`
+				Limit    *uint   `form:"limit,default=20" binding:"omitempty,min=1,max=2049"`
+			}
+		}
+		if err := c.ShouldBindQuery(&query); err != nil {
+			ctx.Infof("failed to bin params, err: %v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+
+    ethAddr := common.HexToAddress(query.FromHezEthereumAddr)
+    txes, err := l2db.GetTx(db, &ethAddr)
+    if err != nil {
+			ctx.Infof("failed to bin params, err: %v", err)
+			ctx.AbortWith400(err.Error())
+			return
+    }
+		ctx.RespondWith(http.StatusOK, "success", txes)
+	}
 }

@@ -24,7 +24,7 @@ type config struct {
 var configs = map[uint64]config{
 	model.ChainIDEthereum: {
 		StartBlock:     3708390,
-		JobIntervalSec: 5,
+		JobIntervalSec: 20,
 		Cfg: txprocessor.Config{
 			NLevels:  8,
 			MaxFeeTx: 4,

@@ -21,7 +21,7 @@ type Account struct {
 	BatchNum BatchNum              `json:"batch_num"`
 	BJJ      babyjub.PublicKeyComp `json:"bjj"`
 	EthAddr  common.Address        `json:"eth_addr"`
-  Nonce    nonce.Nonce           `gorm:"-" json:"nonce"`
+	Nonce    nonce.Nonce           `gorm:"-" json:"nonce"`
 	Balance  *big.Int              `gorm:"-"`
 }
 
@@ -140,9 +140,9 @@ func AccountFromBytes(b [32 * NLeafElems]byte) (*Account, error) {
 }
 
 type AccountUpdate struct {
-	EthBlockNum int64       
-	BatchNum    BatchNum    
-	Idx         Idx         
-	Nonce       nonce.Nonce 
-	Balance     *big.Int    `gorm:"type:numeric"`
+	EthBlockNum int64
+	BatchNum    BatchNum
+	Idx         Idx
+	Nonce       nonce.Nonce
+	Balance     *big.Int `gorm:"type:numeric"`
 }
