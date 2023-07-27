@@ -5,12 +5,13 @@ import (
 	"database/sql"
 	"fmt"
 	"math/big"
+	"time"
+
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/database/l2db"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/database/statedb"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/service/txprocessor"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/utils"
-	"time"
 
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
@@ -18,7 +19,8 @@ import (
 
 const (
 	syncingBlockCacheKey = "syncingBlock"
-	l1l2timeout          = 100000
+	l1l2timeout          = 5000
+	maxTimeout           = 1000000
 )
 
 type job struct {
@@ -41,9 +43,9 @@ func NewJob(cfg *model.JobConfig, db *gorm.DB, r model.IService, sdb *statedb.St
 }
 
 func (j *job) Run(ctx context.Context) {
-  // j.sdb.Reset(8)
-  // j.syncDB.Reset(8)
-  // return
+	// j.sdb.Reset(2)
+	// j.syncDB.Reset(2)
+	// return
 	c, existed := configs[j.globalCfg.ChainID]
 	if !existed {
 		return
@@ -85,7 +87,7 @@ func (j *job) process(ctx context.Context) {
 		return
 	}
 	fmt.Println("Start checking l1l2 Bacth")
-	l1Batch, err := j.checkL1L2Batch(ctx)
+	l1Batch, requireL1Batch, err := j.checkL1L2Batch(ctx)
 	if err != nil {
 		fmt.Printf("failed to check l1l2 batch, err: %v\n", err)
 		return
@@ -105,9 +107,25 @@ func (j *job) process(ctx context.Context) {
 		return
 	}
 
-	if len(l1txs)+len(selectedL2Tx) == 0 && !l1Batch {
-		fmt.Printf("wait tx\n")
-		return
+	if l1Batch {
+		isL1Pending, err := l2db.IsL1Pending(j.db)
+		if err != nil {
+			fmt.Printf("failed to check l1 pending, err: %v", err)
+			return
+		}
+		if isL1Pending {
+			requireL1Batch = isL1Pending
+		}
+		fmt.Println("l1batch: ", requireL1Batch)
+		if len(l1txs)+len(selectedL2Tx) == 0 && !requireL1Batch {
+			fmt.Printf("wait tx\n")
+			return
+		}
+	} else {
+		if len(selectedL2Tx) == 0 {
+			fmt.Printf("wait tx\n")
+			return
+		}
 	}
 
 	if err := j.buildBatchL2(ctx, l1txs, selectedL2Tx, l1Batch); err != nil {
@@ -156,10 +174,10 @@ func (j *job) buildBatchL2(ctx context.Context, l1txs []model.L1Tx, pooll2txs []
 		return err
 	}
 
-  fmt.Printf("exit infor :%+v\n",pout.ExitInfos)
-  for i := range pout.ExitInfos {
-    fmt.Printf("exit infor :%+v\n",pout.ExitInfos[i].MerkleProof.Siblings)
-  }
+	fmt.Printf("exit infor :%+v\n", pout.ExitInfos)
+	for i := range pout.ExitInfos {
+		fmt.Printf("exit infor :%+v\n", pout.ExitInfos[i].MerkleProof.Siblings)
+	}
 
 	nextBatch := sdbBatch + 1
 	txs := make([]model.Tx, 0, len(l1txs)+len(pooll2txs))
@@ -282,13 +300,13 @@ func (j *job) buildBatchL2(ctx context.Context, l1txs []model.L1Tx, pooll2txs []
 		return err
 	}
 
-  if err := l2db.AddExitTree(tx, pout.ExitInfos, nextBatch); err != nil {
-    fmt.Printf("failed to save exit tree, err: %v\n", err)
-    tx.Rollback()
+	if err := l2db.AddExitTree(tx, pout.ExitInfos, nextBatch); err != nil {
+		fmt.Printf("failed to save exit tree, err: %v\n", err)
+		tx.Rollback()
 		j.sdb.Reset(sdbBatch)
 		j.syncDB.Reset(sdbBatch)
-    return err
-  }
+		return err
+	}
 
 	if len(pooll2txs) > 0 {
 
@@ -370,13 +388,14 @@ tx_pool.rq_fee, tx_pool.rq_nonce, tx_pool.tx_type, tx_pool.rq_offset, tx_pool.at
 	return txs, nil
 }
 
-func (j *job) checkL1L2Batch(ctx context.Context) (bool, error) {
+func (j *job) checkL1L2Batch(ctx context.Context) (bool, bool, error) {
 	var ethBlockNumPtr sql.NullInt64
 	query := j.db.Select("max(eth_block_num)")
 	query = query.Table("block_l2")
 	query = query.Where("is_l1 = true")
 	if err := query.Scan(&ethBlockNumPtr).Error; err != nil {
-		return false, err
+		fmt.Println("failed to scan ethBlockNumPtr, err: %v", err)
+		return false, false, err
 	}
 
 	ethBlockNumL1L2 := uint64(0)
@@ -387,14 +406,14 @@ func (j *job) checkL1L2Batch(ctx context.Context) (bool, error) {
 	client, err := utils.GetEvmClient(ctx, j.globalCfg.RPCs)
 	if err != nil {
 		fmt.Printf("failed to get evm client, err: %v\n", err)
-		return false, err
+		return false, false, err
 	}
 
 	currentBlock, err := client.BlockNumber(ctx)
 	if err != nil {
 		fmt.Printf("failed to get current block, err: %v\n", err)
-		return false, err
+		return false, false, err
 	}
 
-	return ethBlockNumL1L2+l1l2timeout < currentBlock, nil
+	return ethBlockNumL1L2+l1l2timeout < currentBlock, ethBlockNumL1L2+maxTimeout < currentBlock, nil
 }

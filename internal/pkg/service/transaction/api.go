@@ -6,10 +6,10 @@ import (
 	"math/big"
 	"net/http"
 
+	"github.com/rikikudohust-thesis/l2node/internal/pkg/database/l2db"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model/nonce"
 	"github.com/rikikudohust-thesis/l2node/pkg/context"
-  "github.com/rikikudohust-thesis/l2node/internal/pkg/database/l2db"
 
 	"github.com/ethereum/go-ethereum/common"
 	"github.com/gin-gonic/gin"
@@ -69,7 +69,7 @@ func postTxVer2(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		if err := pooll2tx.SetType(); err != nil {
-			ctx.Infof("failed to set type, err: &v", err)
+			ctx.Infof("failed to set type, err: %v", err)
 			ctx.AbortWith400(err.Error())
 			return
 		}
@@ -144,7 +144,7 @@ func postTx(db *gorm.DB) gin.HandlerFunc {
 		}
 
 		if err := pooll2tx.SetType(); err != nil {
-			ctx.Infof("failed to set type, err: &v", err)
+			ctx.Infof("failed to set type, err: %v", err)
 			ctx.AbortWith400(err.Error())
 			return
 		}
@@ -433,13 +433,13 @@ func getPoolTx(db *gorm.DB) gin.HandlerFunc {
 			return
 		}
 
-    ethAddr := common.HexToAddress(query.FromHezEthereumAddr)
-    txes, err := l2db.GetTx(db, &ethAddr)
-    if err != nil {
+		ethAddr := common.HexToAddress(query.FromHezEthereumAddr)
+		txes, err := l2db.GetTx(db, &ethAddr)
+		if err != nil {
 			ctx.Infof("failed to bin params, err: %v", err)
 			ctx.AbortWith400(err.Error())
 			return
-    }
+		}
 		ctx.RespondWith(http.StatusOK, "success", txes)
 	}
 }

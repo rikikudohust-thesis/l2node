@@ -26,19 +26,15 @@ import (
 	"gorm.io/gorm"
 )
 
-const (
-	forgingBlockCacheKey = "forging"
-	l1l2BatchTimeout     = 10
-)
-
 type job struct {
-	globalCfg *model.JobConfig
-	localCfg  *config
-	db        *gorm.DB
-	r         model.IService
-	sdb       *statedb.StateDB
-	processor *txprocessor.TxProcessor
-	abi       abi.ABI
+	globalCfg       *model.JobConfig
+	localCfg        *config
+	db              *gorm.DB
+	r               model.IService
+	sdb             *statedb.StateDB
+	processor       *txprocessor.TxProcessor
+	abi             abi.ABI
+	proofCalculator *ProofService
 }
 type ProofService struct {
 	ZKEY              []byte
@@ -86,17 +82,16 @@ func (ps *ProofService) CalculateProof(input *model.ZKInputs) (*Proof, *PublicIn
 
 func NewJob(cfg *model.JobConfig, db *gorm.DB, r model.IService, sdb *statedb.StateDB) model.IJob {
 	return &job{
-		globalCfg: cfg,
-		db:        db,
-		r:         r,
-		sdb:       sdb,
-		abi:       utils.GetAbis("internal/pkg/abis/zkpayment/zkpayment.json"),
+		globalCfg:       cfg,
+		db:              db,
+		r:               r,
+		sdb:             sdb,
+		abi:             utils.GetAbis("internal/pkg/abis/zkpayment/zkpayment.json"),
+		proofCalculator: NewProofService(),
 	}
 }
 
 func (j *job) Run(ctx context.Context) {
-	// j.sdb.Reset(11)
-	// return
 	c, existed := configs[j.globalCfg.ChainID]
 	if !existed {
 		return
@@ -110,7 +105,15 @@ func (j *job) Run(ctx context.Context) {
 }
 
 func (j *job) process(ctx context.Context) {
+
 	currentBatch := j.sdb.CurrentBatch()
+	// if j.sdb.CurrentBatch() == model.BatchNum(0) {
+	// 	err := j.emptyForge(ctx)
+	// 	if err != nil {
+	// 		j.sdb.Reset(0)
+	// 	}
+	// 	return
+	// }
 	batchSynced, _, err := j.getSyncBatch(ctx)
 
 	if err != nil {
@@ -127,8 +130,8 @@ func (j *job) process(ctx context.Context) {
 		return
 	}
 
+	fmt.Printf("current batch l2 : %v,current batch l1: %v \n", currentBlockL2, currentBatch)
 	if currentBatch >= model.BatchNum(currentBlockL2) {
-		fmt.Println(currentBlockL2)
 		return
 	}
 
@@ -137,32 +140,6 @@ func (j *job) process(ctx context.Context) {
 		return
 	}
 
-	// batchTxs, err := j.getBatch(ctx, currentBatch+1)
-	// if err != nil {
-	// 	fmt.Printf("failed to get batch txs, err: %v\n", err)
-	// 	return
-	// }
-	//
-	// l1txs := make([]model.L1Tx, 0)
-	// pooll2txs := make([]model.PoolL2Tx, 0)
-	// for _, batchTx := range batchTxs {
-	// 	if batchTx.IsL1 {
-	// 		l1tx, err := batchTx.L1Tx()
-	// 		if err != nil {
-	// 			fmt.Printf("failed to convert batchTxs to l1Tx, err: %v\n", err)
-	// 		}
-	// 		l1txs = append(l1txs, *l1tx)
-	// 		continue
-	// 	}
-	// 	var pooll2tx []model.PoolL2Tx
-	// 	query := j.db.Table("tx_pool")
-	// 	query = query.Where("tx_id = ?", batchTx.TxID)
-	// 	if err := query.Find(&pooll2tx).Error; err != nil {
-	// 		fmt.Printf("failed to get l2 data, err %v\n: ", err)
-	// 		return
-	// 	}
-	// 	pooll2txs = append(pooll2txs, pooll2tx...)
-	// }
 	l1txs, pooll2txs, err := j.getBatchTxs(ctx, currentBatch+1)
 	if err != nil {
 		fmt.Printf("failed to get txs of batch %d\n", currentBatch+1)
@@ -199,16 +176,16 @@ func (j *job) forgeBatch(ctx context.Context, cfg *model.JobConfig, proof *Proof
 	proofB := [2][2]*big.Int{{proof.PiB[0][1], proof.PiB[0][0]}, {proof.PiB[1][1], proof.PiB[1][0]}}
 	proofC := [2]*big.Int{proof.PiC[0], proof.PiC[1]}
 
-	hash, _ := zkInput.HashGlobalData()
-	fmt.Printf("hash: %v", hash)
-	fmt.Printf("last idx raw: %+v\n", zkInput.Metadata.NewLastIdxRaw.BigInt())
-	fmt.Printf("last state raw: %+v\n", zkInput.Metadata.NewStateRootRaw.BigInt())
-	fmt.Printf("last exit raw: %+v\n", zkInput.Metadata.NewExitRootRaw.BigInt())
-	fmt.Printf("l1L2TxsData: %x\n", l1L2TxsData)
-	fmt.Printf("l1Batch: %v\n", l1Batch)
-	fmt.Printf("proofA: %+v\n", proofA)
-	fmt.Printf("proofB: %+v\n", proofB)
-	fmt.Printf("proofC: %+v\n", proofC)
+	// hash, _ := zkInput.HashGlobalData()
+	// fmt.Printf("hash: %v", hash)
+	// fmt.Printf("last idx raw: %+v\n", zkInput.Metadata.NewLastIdxRaw.BigInt())
+	// fmt.Printf("last state raw: %+v\n", zkInput.Metadata.NewStateRootRaw.BigInt())
+	// fmt.Printf("last exit raw: %+v\n", zkInput.Metadata.NewExitRootRaw.BigInt())
+	// fmt.Printf("l1L2TxsData: %x\n", l1L2TxsData)
+	// fmt.Printf("l1Batch: %v\n", l1Batch)
+	// fmt.Printf("proofA: %+v\n", proofA)
+	// fmt.Printf("proofB: %+v\n", proofB)
+	// fmt.Printf("proofC: %+v\n", proofC)
 
 	data, err := j.abi.Pack(
 		"forgeBatch",
@@ -239,18 +216,6 @@ func (j *job) forgeBatch(ctx context.Context, cfg *model.JobConfig, proof *Proof
 	}
 	fmt.Printf("txs: %+v", tx)
 	return nil
-}
-
-func (j *job) getL1L2TxSelection() ([]model.Idx, [][]byte, []model.L1Tx,
-	[]model.L1Tx, []model.PoolL2Tx, []model.PoolL2Tx, error) {
-	var l1txs []model.L1Tx
-	query := j.db.Table("txes")
-	query = query.Where("is_l1 = ?", true)
-	if err := query.Find(&l1txs).Error; err != nil {
-		return nil, nil, nil, nil, nil, nil, err
-	}
-
-	return []model.Idx{}, [][]byte{}, l1txs, []model.L1Tx{}, []model.PoolL2Tx{}, []model.PoolL2Tx{}, nil
 }
 
 func (j *job) RollupForgeBatch(l1CoordinatorTxs []model.L1Tx, l1UserTxs []model.L1Tx, l2TxsData []model.L2Tx, feeId []model.Idx) ([]byte, []byte, []byte, error) {
@@ -313,67 +278,6 @@ func (j *job) RollupForgeBatch(l1CoordinatorTxs []model.L1Tx, l1UserTxs []model.
 	return nil, l1l2TxData, feeIdxCoordinatorByte, nil
 }
 
-func (j *job) getFutureForgeL1txs(ctx context.Context) ([]model.L1Tx, error) {
-	var txs []model.L1Tx
-	query := j.db.Select("tx_id, min(to_forge_l1_txs_num), position, user_origin, from_idx, from_eth_addr, from_bjj, to_idx, token_id, amount, NULL AS effective__amount, deposit_amount, NULL AS effective_deposit_amount, eth_block_num, type, batch_num")
-	query = query.Table("txes")
-	query = query.Where("batch_num IS NULL")
-	query = query.Group("tx_id, to_forge_l1_txs_num, position, user_origin, from_idx, from_eth_addr, from_bjj, to_idx, token_id, amount, deposit_amount, eth_block_num, type, batch_num")
-	query = query.Order("position")
-	if err := query.Find(&txs).Error; err != nil {
-		return []model.L1Tx{}, err
-	}
-	return txs, nil
-}
-
-func (j *job) getBatchData(ctx context.Context) ([]model.L1Tx, []model.L2Tx, []model.PoolL2Tx, error) {
-	var txs []model.Tx
-	currentBatch := j.sdb.CurrentBatch()
-	query := j.db.Select("tx_id,is_l1 ,to_forge_l1_txs_num, position, user_origin, from_idx, from_eth_addr, from_bjj, to_idx, token_id, amount, NULL AS effective__amount, deposit_amount, NULL AS effective_deposit_amount, eth_block_num, type, batch_num")
-	query = query.Table("batch_l2")
-	query = query.Where("batch_num = ?", currentBatch+1)
-	if err := query.Find(&txs).Error; err != nil {
-		return nil, nil, nil, err
-	}
-	l1txs := make([]model.L1Tx, 0)
-	l2txs := make([]model.L2Tx, 0)
-
-	for _, tx := range txs {
-		if tx.IsL1 {
-			l1tx, err := tx.L1Tx()
-			if err != nil {
-				fmt.Printf("faild to get l1 tx Batch data, err: %v\n", err)
-				return nil, nil, nil, err
-			}
-			l1txs = append(l1txs, *l1tx)
-			continue
-		}
-		l2txs = append(l2txs, model.L2Tx{
-			TxID:    tx.TxID,
-			FromIdx: tx.FromIdx,
-			ToIdx:   tx.ToIdx,
-			// Nonce:   *tx.Nonce,
-		})
-	}
-
-	return l1txs, l2txs, model.L2TxsToPoolL2Txs(l2txs), nil
-}
-
-func (j *job) getCurrentBatch(ctx context.Context) (uint64, bool) {
-	var nextBatchPtr sql.NullInt64
-	query1 := j.db.Select("MAX(to_forge_l1_txs_num)")
-	query1 = query1.Table("batch_l2")
-	if err := query1.Scan(&nextBatchPtr).Error; err != nil {
-		fmt.Printf("failed to get last l1 forge, %v\n", err)
-	}
-
-	currentBatch := uint64(0)
-	if !nextBatchPtr.Valid {
-		return 0, true
-	}
-	return currentBatch, false
-}
-
 func (j *job) getSyncBatch(ctx context.Context) (uint64, bool, error) {
 	var currentBatchPtr sql.NullInt64
 	query1 := j.db.Select("MAX(batch_num)")
@@ -387,21 +291,6 @@ func (j *job) getSyncBatch(ctx context.Context) (uint64, bool, error) {
 		return 0, true, nil
 	}
 	return uint64(currentBatchPtr.Int64), false, nil
-}
-
-func (j *job) getBatch(ctx context.Context, batchNum model.BatchNum) ([]model.Tx, error) {
-	var txs []*model.TxGorm
-	query1 := j.db.Table("txes_l2")
-	query1 = query1.Where("batch_num = ?", batchNum)
-	if err := query1.Find(&txs).Error; err != nil {
-		fmt.Printf("faild to get batch l2, %v\n", err)
-		return nil, err
-	}
-	txdb := make([]model.Tx, 0, len(txs))
-	for _, tx := range txs {
-		txdb = append(txdb, *tx.ToTx())
-	}
-	return txdb, nil
 }
 
 func (j *job) getBatchTxs(ctx context.Context, batchNum model.BatchNum) ([]model.L1Tx, []model.PoolL2Tx, error) {
@@ -446,36 +335,13 @@ inner join txes_l2 on txes_l2.id = tx_pool.tx_id`)
 	return l1txs, pooll2txs, nil
 }
 
-func (j *job) emptyForge(ctx context.Context) error {
-	output1, err := j.processor.ProcessTxs(nil, nil, nil, nil)
-	if err != nil {
-		fmt.Printf("failed to process txs, %v\n", err)
-		return err
-	}
-
-	proofSV := NewProofService()
-	proofData0, _, err := proofSV.CalculateProof(output1.ZKInputs)
-	if err != nil {
-		fmt.Printf("failed to calculate proof, %v\n", err)
-		return err
-	}
-	l1Batch := true
-	if err := j.forgeBatch(ctx, j.globalCfg, proofData0, output1.ZKInputs, nil, nil, nil, l1Batch); err != nil {
-		fmt.Printf("failed to forgeBatch, err: %v\n", err)
-		return err
-	}
-	fmt.Println("Done")
-	return nil
-}
-
 func (j *job) forgeBatchOnChain(ctx context.Context, l1txs []model.L1Tx, pooll2txs []model.PoolL2Tx, l1Batch bool) error {
 	output1, err := j.processor.ProcessTxs(nil, l1txs, nil, pooll2txs)
 	if err != nil {
 		fmt.Printf("failed to process txs, %v\n", err)
 		return err
 	}
-	proofSV := NewProofService()
-	proofData0, _, err := proofSV.CalculateProof(output1.ZKInputs)
+	proofData0, _, err := j.proofCalculator.CalculateProof(output1.ZKInputs)
 	if err != nil {
 		fmt.Printf("failed to calculate proof, %v\n", err)
 		return err
@@ -491,22 +357,6 @@ func (j *job) forgeBatchOnChain(ctx context.Context, l1txs []model.L1Tx, pooll2t
 	}
 	fmt.Println("Done")
 	return nil
-}
-
-func (j *job) getLastL1L2Timeout(ctx context.Context) (uint64, error) {
-	var lastL1L2TimeOutPtr sql.NullInt64
-	query1 := j.db.Select("MAX(batch_num)")
-	query1 = query1.Table("(SELECT * FROM batch_l2 WHERE is_l1=true) as l2Batch")
-	if err := query1.Scan(&lastL1L2TimeOutPtr).Error; err != nil {
-		fmt.Printf("failed to get last l1 forge, %v\n", err)
-		return 0, err
-	}
-
-	if !lastL1L2TimeOutPtr.Valid {
-		return 0, nil
-	}
-	return uint64(lastL1L2TimeOutPtr.Int64), nil
-
 }
 
 func (j *job) getCurrentBlockL2(ctx context.Context) (uint64, error) {
@@ -532,4 +382,25 @@ func (j *job) getBlockInfor(ctx context.Context, batch model.BatchNum) (*model.B
 		return nil, err
 	}
 	return &blockL2, nil
+}
+
+func (j *job) emptyForge(ctx context.Context) error {
+	output1, err := j.processor.ProcessTxs(nil, nil, nil, nil)
+	if err != nil {
+		fmt.Printf("failed to process txs, %v\n", err)
+		return err
+	}
+
+	proofData0, _, err := j.proofCalculator.CalculateProof(output1.ZKInputs)
+	if err != nil {
+		fmt.Printf("failed to calculate proof, %v\n", err)
+		return err
+	}
+	l1Batch := true
+	if err := j.forgeBatch(ctx, j.globalCfg, proofData0, output1.ZKInputs, nil, nil, nil, l1Batch); err != nil {
+		fmt.Printf("failed to forgeBatch, err: %v\n", err)
+		return err
+	}
+	fmt.Println("Done")
+	return nil
 }

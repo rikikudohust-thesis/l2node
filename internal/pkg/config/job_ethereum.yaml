@@ -12,7 +12,7 @@ config:
     - batchbuilder
   rpcs:
     - https://arbitrum-goerli.blockpi.network/v1/rpc/public 
-  zkpayment: "0x5f5a6E0199369d4b22C03619f84b7A77E5C3F548"
-  startblock: 30711486    
+  zkpayment: "0xbA1D39C6621770fE3738A6E6D1024F58B6e2F810"
+  startblock: 31958849             
     # - https://eth-sepolia.public.blastapi.io
     

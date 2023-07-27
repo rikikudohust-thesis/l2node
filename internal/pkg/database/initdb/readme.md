@@ -143,7 +143,7 @@ create table if not exists tx_pool (
   client_ip varchar,
   external_delete boolean not null default false,
   primary key(item_id)
-);;
+);
 
 create table if not exists txes_l2(
   item_id bigserial primary key,

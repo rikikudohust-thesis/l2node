@@ -230,8 +230,20 @@ func GetExitTree(db *gorm.DB, idx model.Idx) ([]*model.ExitInfoGorm, error) {
 
 func GetTx(db *gorm.DB, ethAddr *common.Address) ([]*model.TransactionResponse, error) {
 	var txs []*model.TransactionResponse
-  if err := db.Raw(queryTxRaw, ethAddr, ethAddr, ethAddr).Find(&txs).Error; err != nil {
+	if err := db.Raw(queryTxRaw, ethAddr, ethAddr, ethAddr).Find(&txs).Error; err != nil {
 		return nil, err
 	}
 	return txs, nil
+}
+
+func IsL1Pending(db *gorm.DB) (bool, error) {
+	var amount uint64
+	rawQR := `select count(*) as unforge from txes_l2
+	where batch_num is null
+	group by batch_num;`
+	if err := db.Raw(rawQR).Find(&amount).Error; err != nil {
+		return false, err
+	}
+
+	return amount > 0, nil
 }

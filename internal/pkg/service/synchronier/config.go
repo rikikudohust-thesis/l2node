@@ -29,8 +29,8 @@ var configs = map[uint64]config{
 		AddToken:                    ethCommon.HexToHash("0xcb73d161edb7cd4fb1d92fedfd2555384fd997fd44ab507656f8c81e15747dde"),
 		UpdateForgeL1L2BatchTimeout: ethCommon.HexToHash("0xff6221781ac525b04585dbb55cd2ebd2a92c828ca3e42b23813a1137ac974431"),
 		UpdateFeeAddToken:           ethCommon.HexToHash("0xd1c873cd16013f0dc5f37992c0d12794389698512895ec036a568e393b46e3c1"),
-		BlockRangeLimit:             50,
-		BatchSize:                   10,
+		BlockRangeLimit:             1000,
+		BatchSize:                   50,
 		JobIntervalSec:              1,
 		Cfg: txprocessor.Config{
 			NLevels:  8,

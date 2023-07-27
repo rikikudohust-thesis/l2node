@@ -130,6 +130,7 @@ func getAccountByEthAddrAndTokenID(db *gorm.DB) gin.HandlerFunc {
 			ctx.AbortWith400(err.Error())
 			return
 		}
+		ctx.Infof("ethAddr: %v\n", p.EthAddr)
 
 		var accounts []*accountAPI
 		if err := db.Raw(accountEthQueryRaw, p.TokenID, common.HexToAddress(*p.EthAddr)).Find(&accounts).Error; err != nil {

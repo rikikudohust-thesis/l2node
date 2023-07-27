@@ -17,6 +17,7 @@ import (
 	"github.com/ethereum/go-ethereum"
 	"github.com/ethereum/go-ethereum/accounts/abi"
 	"github.com/ethereum/go-ethereum/common"
+	"github.com/ethereum/go-ethereum/core/types"
 	"gorm.io/gorm"
 	"gorm.io/gorm/clause"
 )
@@ -58,7 +59,7 @@ func (j *job) Run(ctx context.Context) {
 		j.process(ctx)
 		fmt.Println("done, elapsed: ", time.Since(start))
 		// time.Sleep(time.Duration(j.localCfg.JobIntervalSec) * time.Second)
-		time.Sleep(time.Duration(300) * time.Millisecond)
+		time.Sleep(time.Duration(1000) * time.Millisecond)
 
 	}
 }
@@ -69,42 +70,51 @@ func (j *job) process(ctx context.Context) {
 		fmt.Printf("failed to get syncing block, err: %v \n", err)
 		return
 	}
-	startBlock := j.globalCfg.StartBlock
-	if startBlock < syncingBlock {
-		startBlock = syncingBlock
-	}
-	ethBlock := model.Block{
-		Num: int64(startBlock),
-	}
-	fmt.Printf("querying block: %v\n", ethBlock.Num)
-	client, err := utils.GetEvmClient(ctx, j.globalCfg.RPCs)
+	// startBlock := j.globalCfg.StartBlock
+	// if startBlock < syncingBlock {
+	// 	startBlock = syncingBlock
+	// }
+	// ethBlock := model.Block{
+	// 	Num: int64(startBlock),
+	// }
+	// fmt.Printf("querying block: %v\n", ethBlock.Num)
+	// client, err := utils.GetEvmClient(ctx, j.globalCfg.RPCs)
+	// if err != nil {
+	// 	fmt.Printf("failed to get evm client: %v\n", err)
+	// 	return
+	// }
+	// currentBlock, err := client.BlockNumber(ctx)
+	// if err != nil {
+	// 	fmt.Printf("failed to get current number: %v\n", err)
+	// 	return
+	// }
+	// confirmedBlock := currentBlock - j.globalCfg.ConfirmedBlocks
+	// if uint64(ethBlock.Num) > uint64(confirmedBlock) {
+	// 	fmt.Printf("wait for block: %v\n", ethBlock)
+	// 	return
+	// }
+	blocks, syncedBlock, err := j.getLogs(ctx, syncingBlock)
 	if err != nil {
-		fmt.Printf("failed to get evm client: %v\n", err)
-		return
-	}
-	currentBlock, err := client.BlockNumber(ctx)
-	if err != nil {
-		fmt.Printf("failed to get current number: %v\n", err)
-		return
-	}
-	confirmedBlock := currentBlock - j.globalCfg.ConfirmedBlocks
-	if uint64(ethBlock.Num) > uint64(confirmedBlock) {
-		fmt.Printf("wait for block: %v\n", ethBlock)
+		fmt.Printf("failed to get logs, err: %v\n", err)
 		return
 	}
 
 	currentBatch := j.sdb.CurrentBatch()
-	rollupData, syncedBlock, err := j.rollupSync(ctx, &ethBlock)
-	if err != nil {
-		fmt.Printf("failed to sync rollup, err %v\n", err)
-		j.sdb.Reset(currentBatch)
-		return
-	}
-	fmt.Printf("synced: %v\n", syncedBlock)
-	if err := j.save(ctx, rollupData); err != nil {
-		fmt.Printf("failed to save rollup data, err: %v\n", err)
-		j.sdb.Reset(currentBatch)
-		return
+	for _, block := range blocks {
+		rollupData, _, err := j.rollupSync(ctx, &block)
+		if err != nil {
+			fmt.Printf("failed to sync rollup, err %v\n", err)
+			j.sdb.Reset(currentBatch)
+			return
+		}
+		fmt.Printf("synced: %v\n", syncedBlock)
+		if rollupData != nil {
+			if err := j.save(ctx, rollupData); err != nil {
+				fmt.Printf("failed to save rollup data, err: %v\n", err)
+				j.sdb.Reset(currentBatch)
+				return
+			}
+		}
 	}
 
 	if err := j.r.Set(ctx, syncingBlockCacheKey, syncedBlock+1, 0); err != nil && !model.IsNilErr(err) {
@@ -114,15 +124,83 @@ func (j *job) process(ctx context.Context) {
 	}
 }
 
+func (j *job) getLogs(ctx context.Context, syncingBlock uint64) (blocks []model.Block, syncedBlock uint64, err error) {
+	logs := make([]types.Log, 0)
+	if j.localCfg.StartBlock > syncingBlock {
+		syncingBlock = j.globalCfg.StartBlock
+	}
+
+	client, err := utils.GetEvmClient(ctx, j.globalCfg.RPCs)
+	if err != nil {
+		fmt.Printf("failed to get evm client, err: %v\n", err)
+		return nil, 0, err
+	}
+
+	currBlock, err := client.BlockNumber(ctx)
+	if err != nil {
+		fmt.Printf("failed to get current block, err: %v\n", err)
+		return nil, 0, err
+	}
+	confirmedBlock := currBlock - j.globalCfg.ConfirmedBlocks
+	if syncingBlock > confirmedBlock {
+		fmt.Printf("wait next blocks, syncing: %d, current: %d, confirmed: %d\n", syncingBlock, currBlock, confirmedBlock)
+		return nil, confirmedBlock, nil
+	}
+
+	eventQuery := ethereum.FilterQuery{
+		Addresses: []common.Address{j.globalCfg.Contracts.ZKPayment},
+		Topics:    [][]common.Hash{},
+	}
+
+	var toBlock uint64
+	skip := uint64(0)
+	for {
+		eventQuery.FromBlock = big.NewInt(int64(syncingBlock + skip))
+		toBlock = syncingBlock + skip + j.localCfg.BlockRangeLimit - 1
+		if toBlock > confirmedBlock {
+			toBlock = confirmedBlock
+		}
+		eventQuery.ToBlock = big.NewInt(int64(toBlock))
+		skip += j.localCfg.BlockRangeLimit
+
+		fmt.Printf("quering from block %v to %v\n", eventQuery.FromBlock, eventQuery.ToBlock)
+		l, err := client.FilterLogs(ctx, eventQuery)
+		if err != nil {
+			fmt.Printf("failed to get network logs, err: %v\n", err)
+			return nil, 0, err
+		}
+		fmt.Println("len(logs):", len(l))
+		logs = append(logs, l...)
+
+		if toBlock >= confirmedBlock {
+			markLogs := make(map[uint64]bool)
+			for _, log := range logs {
+				if !markLogs[log.BlockNumber] {
+					blocks = append(blocks, model.Block{Num: int64(log.BlockNumber)})
+					markLogs[log.BlockNumber] = true
+				}
+
+			}
+			return blocks, toBlock, nil
+		}
+
+		if len(logs) >= int(j.localCfg.BatchSize) {
+			markLogs := make(map[uint64]bool)
+			for _, log := range logs {
+				if !markLogs[log.BlockNumber] {
+					blocks = append(blocks, model.Block{Num: int64(log.BlockNumber)})
+					markLogs[log.BlockNumber] = true
+				}
+
+			}
+			return blocks, logs[len(logs)-1].BlockNumber, nil
+		}
+	}
+}
+
 func (j *job) rollupSync(ctx context.Context, ethBlock *model.Block) (*model.RollupData, uint64, error) {
 	blockNum := ethBlock.Num
 	rollupData := model.NewRollupData()
-
-	nextForgeL1TxsNum, err := j.getLastL1TxsNum()
-	if err != nil {
-		fmt.Printf("failed to get last forge l1 txs num, err: %v\n", err)
-		return nil, 0, err
-	}
 
 	rollupEvents, err := j.RollupEventsByBlock(ctx, uint64(blockNum))
 	if err != nil {
@@ -132,6 +210,12 @@ func (j *job) rollupSync(ctx context.Context, ethBlock *model.Block) (*model.Rol
 
 	if rollupEvents == nil {
 		return nil, uint64(ethBlock.Num), nil
+	}
+
+	nextForgeL1TxsNum, err := j.getLastL1TxsNum()
+	if err != nil {
+		fmt.Printf("failed to get last forge l1 txs num, err: %v\n", err)
+		return nil, 0, err
 	}
 
 	rollupData.L1UserTxs, err = getL1UserTx(rollupEvents.L1UserTx, blockNum)
@@ -440,8 +524,6 @@ func (j *job) RollupForgeBatchArgs(ctx context.Context, ethTxHash common.Hash, l
 	} else if err := method.Inputs.Copy(&aux, values); err != nil {
 		return nil, nil, err
 	}
-	fmt.Printf("txData: %X\n", txData[4:])
-	fmt.Printf("aux: %+v\n", aux)
 	rollupForgeBatchArgs := RollupForgeBatchArgs{
 		L1Batch:               aux.L1Batch,
 		NewExitRoot:           aux.NewExitRoot,
@@ -463,11 +545,6 @@ func (j *job) RollupForgeBatchArgs(ctx context.Context, ethTxHash common.Hash, l
 	numTxsL1Coord := len(aux.EncodedL1CoordinatorTx) / model.RollupConstL1CoordinatorTotalBytes
 	numBytesL1TxCoord := numTxsL1Coord * lenL1L2TxsBytes
 	numBeginL2Tx := numBytesL1TxCoord + numBytesL1TxUser
-	fmt.Printf("len: %v", len(aux.L1L2TxsData))
-	fmt.Printf("LEN L1L2: %v\n", lenL1L2TxsBytes)
-	fmt.Printf("NUM BYTES L1: %v\n", numBytesL1TxUser)
-	fmt.Printf("NUM BYTES L1 COORD: %v\n", numTxsL1Coord)
-	fmt.Printf("NUM BYTES L2: %v\n", numBeginL2Tx)
 
 	l1UserTxsData := []byte{}
 	if l1UserTxsLen > 0 {
