@@ -375,6 +375,16 @@ func (j *job) rollupSync(ctx context.Context, ethBlock *model.Block) (*model.Rol
 		})
 	}
 
+	rollupData.Withdrawals = make([]model.WithdrawInfo, 0, len(rollupEvents.Withdraw))
+	for _, evt := range rollupEvents.Withdraw {
+		rollupData.Withdrawals = append(rollupData.Withdrawals, model.WithdrawInfo{
+			Idx:             model.Idx(evt.Idx),
+			NumExitRoot:     model.BatchNum(evt.NumExitRoot),
+			InstantWithdraw: evt.InstantWithdraw,
+			TxHash:          evt.TxHash,
+		})
+	}
+
 	return &rollupData, uint64(ethBlock.Num), nil
 }
 
@@ -468,6 +478,16 @@ func (j *job) RollupEventsByBlock(ctx context.Context, blockNum uint64) (*Rollup
 				return nil, err
 			}
 			rollupEvent.UpdateFeeAddToken = append(rollupEvent.UpdateFeeAddToken, updateFeeAddToken)
+		case j.localCfg.Withdrawal:
+			var withdraw RollupEventWithdraw
+			withdraw.Idx = new(big.Int).SetBytes(log.Topics[1][:]).Uint64()
+			withdraw.NumExitRoot = new(big.Int).SetBytes(log.Topics[2][:]).Uint64()
+			instantWithdraw := new(big.Int).SetBytes(log.Topics[3][:]).Uint64()
+			if instantWithdraw == 1 {
+				withdraw.InstantWithdraw = true
+			}
+			withdraw.TxHash = log.TxHash
+			rollupEvent.Withdraw = append(rollupEvent.Withdraw, withdraw)
 		}
 	}
 
@@ -855,6 +875,12 @@ func (j *job) save(ctx context.Context, rollupData *model.RollupData) error {
 	if err := tx.Clauses(clause.OnConflict{
 		DoNothing: true,
 	}).CreateInBatches(rollupData.AddedTokens, len(rollupData.AddedTokens)).Error; err != nil {
+		tx.Rollback()
+		return err
+	}
+
+	if err := l2db.UpdateExitTree(tx, 0, rollupData.Withdrawals); err != nil {
+		fmt.Printf("failed to update exit tree, err %v\n", err)
 		tx.Rollback()
 		return err
 	}

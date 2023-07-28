@@ -15,6 +15,7 @@ type config struct {
 	AddToken                    ethCommon.Hash
 	UpdateForgeL1L2BatchTimeout ethCommon.Hash
 	UpdateFeeAddToken           ethCommon.Hash
+	Withdrawal                  ethCommon.Hash
 	BlockRangeLimit             uint64
 	BatchSize                   uint64
 	JobIntervalSec              uint64
@@ -29,6 +30,7 @@ var configs = map[uint64]config{
 		AddToken:                    ethCommon.HexToHash("0xcb73d161edb7cd4fb1d92fedfd2555384fd997fd44ab507656f8c81e15747dde"),
 		UpdateForgeL1L2BatchTimeout: ethCommon.HexToHash("0xff6221781ac525b04585dbb55cd2ebd2a92c828ca3e42b23813a1137ac974431"),
 		UpdateFeeAddToken:           ethCommon.HexToHash("0xd1c873cd16013f0dc5f37992c0d12794389698512895ec036a568e393b46e3c1"),
+		Withdrawal:                  ethCommon.HexToHash("0x69177d798b38e27bcc4e0338307e4f1490e12d1006729d0e6e9cc82a8732f415"),
 		BlockRangeLimit:             1000,
 		BatchSize:                   50,
 		JobIntervalSec:              1,

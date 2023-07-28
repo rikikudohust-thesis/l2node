@@ -221,7 +221,7 @@ func AddExitTree(db *gorm.DB, exittree []model.ExitInfo, batchNum model.BatchNum
 func GetExitTree(db *gorm.DB, idx model.Idx) ([]*model.ExitInfoGorm, error) {
 	var eig []*model.ExitInfoGorm
 	query := db.Table("exit_trees")
-	query = query.Where("account_idx = ?", idx)
+	query = query.Where("account_idx = ? and instant_withdrawn is null", idx)
 	if err := query.Find(&eig).Error; err != nil {
 		return nil, err
 	}
@@ -246,4 +246,49 @@ func IsL1Pending(db *gorm.DB) (bool, error) {
 	}
 
 	return amount > 0, nil
+}
+
+func UpdateExitTree(db *gorm.DB, blockNum int64, withdraws []model.WithdrawInfo) error {
+	fmt.Println("here")
+	if len(withdraws) == 0 {
+		return nil
+	}
+	fmt.Println(len(withdraws))
+	// type withdrawal struct {
+	// 	BatchNum               int64           `db:"batch_num"`
+	// 	AccountIdx             int64           `db:"account_idx"`
+	// 	InstantWithdrawn       *int64          `db:"instant_withdrawn"`
+	// 	DelayedWithdrawRequest *int64          `db:"delayed_withdraw_request"`
+	// 	DelayedWithdrawn       *int64          `db:"delayed_withdrawn"`
+	// 	Owner                  *common.Address `db:"owner"`
+	// 	Token                  *common.Address `db:"token"`
+	// }
+	withdrawals := make([]model.ExitTree, len(withdraws))
+	for i := range withdraws {
+		tmp := int64(1)
+		info := &withdraws[i]
+		withdrawals[i] = model.ExitTree{
+			BatchNum:         info.NumExitRoot,
+			AccountIdx:       info.Idx,
+			InstantWithdrawn: &tmp,
+		}
+		// if info.InstantWithdraw {
+		// 	withdrawals[i].InstantWithdrawn = &blockNum
+		// } else {
+		// 	withdrawals[i].DelayedWithdrawRequest = &blockNum
+		// 	withdrawals[i].Owner = &info.Owner
+		// 	withdrawals[i].Token = &info.Token
+		// }
+
+	}
+
+	updateExit := db.Clauses(clause.OnConflict{
+		Columns:   []clause.Column{{Name: "account_idx"}, {Name: "batch_num"}},
+		DoUpdates: clause.AssignmentColumns([]string{"instant_withdrawn"}),
+	})
+	if err := updateExit.Table("exit_trees").Create(withdrawals).Error; err != nil {
+		fmt.Printf("failed to save exit, %v\n", err)
+		return err
+	}
+	return nil
 }

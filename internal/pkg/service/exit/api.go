@@ -4,6 +4,7 @@ import (
 	"math/big"
 	"net/http"
 	"strconv"
+
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/database/l2db"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model/nonce"
@@ -17,7 +18,7 @@ import (
 )
 
 func SetupRouter(router *gin.RouterGroup, db *gorm.DB, r model.IService) {
-	router.GET("/exit/:idx", getExitData(db))
+	router.GET("/exit", getExitDataByEth(db))
 }
 
 func getExitData(db *gorm.DB) gin.HandlerFunc {
@@ -47,7 +48,7 @@ func getExitData(db *gorm.DB) gin.HandlerFunc {
 
 		exitResponse := make([]*ExitResponse, 0, len(exittree))
 		for _, exit := range exittree {
-      ctx.Infof("exit tree root: %v", exit.MerkleProof.Root.String())
+			ctx.Infof("exit tree root: %v", exit.MerkleProof.Root.String())
 			siblings := make([]string, 0, len(exit.MerkleProof.Siblings))
 			for i := range exit.MerkleProof.Siblings {
 				siblings = append(siblings, exit.MerkleProof.Siblings[i].BigInt().String())
@@ -64,6 +65,53 @@ func getExitData(db *gorm.DB) gin.HandlerFunc {
 
 			ctx.RespondWith(http.StatusOK, "success", exitResponse)
 		}
+	}
+}
+
+func getExitDataByEth(db *gorm.DB) gin.HandlerFunc {
+	return func(c *gin.Context) {
+		ctx := context.New(c).WithLogPrefix("get-exit-api-by-bjj-and-eth")
+
+		var p struct {
+			EthAddr string `form:"ethAddr"`
+		}
+		if err := ctx.ShouldBindQuery(&p); err != nil {
+			ctx.Errorf("faild to bind query, err: %v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+		ctx.Infoln(p.EthAddr)
+		query := ` select exit_trees.*, accounts.eth_addr, accounts.bjj ,accounts.token_id 
+		from exit_trees 
+		inner join txes on exit_trees.account_idx = txes.from_idx 
+		inner join accounts on accounts.idx = exit_trees.account_idx 
+		where txes.type = 'ForceExit' and accounts.eth_addr = ? and exit_trees.instant_withdrawn is null;`
+		var resp []model.ExitInfoGormV2
+		if err := db.Raw(query, common.HexToAddress(p.EthAddr)).Find(&resp).Error; err != nil {
+			ctx.Errorf("faild to get exit data, err: %v", err)
+			ctx.AbortWith400(err.Error())
+			return
+		}
+
+		exitResponse := make([]*ExitResponse, 0, len(resp))
+		for _, exit := range resp {
+			ctx.Infof("exit tree root: %v", exit.MerkleProof.Root.String())
+			siblings := make([]string, 0, len(exit.MerkleProof.Siblings))
+			for i := range exit.MerkleProof.Siblings {
+				siblings = append(siblings, exit.MerkleProof.Siblings[i].BigInt().String())
+			}
+			exitResponse = append(exitResponse, &ExitResponse{
+				TokenID:         exit.TokenID,
+				Amount:          exit.Balance,
+				BJJ:             exit.BJJ.String(),
+				NumExitRoot:     uint64(exit.BatchNum),
+				Siblings:        siblings,
+				Idx:             exit.AccountIdx,
+				InstantWithdraw: false,
+			})
+		}
+
+		ctx.RespondWith(http.StatusOK, "success", exitResponse)
 	}
 }
 

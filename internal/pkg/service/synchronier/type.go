@@ -2,9 +2,11 @@ package synchronier
 
 import (
 	"math/big"
+
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 
 	"github.com/ethereum/go-ethereum/common"
+	ethCommon "github.com/ethereum/go-ethereum/common"
 )
 
 type RollupEventL1UserTx struct {
@@ -44,6 +46,7 @@ type RollupEvents struct {
 	ForgeBatch                  []RollupEventForgeBatch
 	UpdateForgeL1L2BatchTimeout []RollupEventUpdateForgeL1L2BatchTimeout
 	UpdateFeeAddToken           []RollupEventUpdateFeeAddToken
+	Withdraw                    []RollupEventWithdraw
 }
 
 func NewRollUpEvents() *RollupEvents {
@@ -55,6 +58,7 @@ func NewRollUpEvents() *RollupEvents {
 		UpdateFeeAddToken:           make([]RollupEventUpdateFeeAddToken, 0),
 	}
 }
+
 type RollupForgeBatchArgs struct {
 	NewLastIdx            int64
 	NewStRoot             *big.Int
@@ -85,4 +89,11 @@ type rollupForgeBatchArgsAux struct {
 	ProofA      [2]*big.Int
 	ProofB      [2][2]*big.Int
 	ProofC      [2]*big.Int
+}
+
+type RollupEventWithdraw struct {
+	Idx             uint64
+	NumExitRoot     uint64
+	InstantWithdraw bool
+	TxHash          ethCommon.Hash // Hash of the transaction that generated this event
 }

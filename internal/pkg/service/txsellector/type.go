@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
+
 	"github.com/rikikudohust-thesis/l2node/internal/pkg/model"
 
 	"github.com/hermeznetwork/tracerr"

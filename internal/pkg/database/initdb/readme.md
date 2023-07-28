@@ -61,8 +61,8 @@ create table if not exists exit_trees (
   item_id serial primary key,
   batch_num bigint,
   account_idx bigint,
-  merkle_proof bytea not null,
-  balance decimal(78,0) not null,
+  merkle_proof bytea ,
+  balance decimal(78,0),
   instant_withdrawn bigint,
   delayed_withdraw_request bigint,
   owner bytea,
@@ -245,7 +245,7 @@ create table if not exists txes_queue(
 alter table txes add constraint tx_id_unique unique (id);
 alter table txes_l2 add constraint tx_id_unique_l2 unique (id);
 alter table txes_queue add constraint tx_id_unique_txes_order unique (id);
-
+alter table exit_trees add constraint exit_trees_unique unique (account_idx, batch_num);
 
 ```
 ## Trunscade data

@@ -6,7 +6,9 @@ import (
 	"errors"
 	"math/big"
 
+	"github.com/ethereum/go-ethereum/common"
 	ethCommon "github.com/ethereum/go-ethereum/common"
+	"github.com/iden3/go-iden3-crypto/babyjub"
 	"github.com/iden3/go-merkletree"
 )
 
@@ -67,7 +69,7 @@ type WithdrawInfo struct {
 // Fnc      int                `json:"fnc"` // 0: inclusion, 1: non inclusion
 
 func (eig *ExitInfoGorm) ToExitInfo() *ExitInfo {
-  balanceBI, _ := new(big.Int).SetString(eig.Balance, 10)
+	balanceBI, _ := new(big.Int).SetString(eig.Balance, 10)
 	return &ExitInfo{
 		BatchNum:   eig.BatchNum,
 		AccountIdx: eig.AccountIdx,
@@ -91,7 +93,7 @@ type ExitInfoGorm struct {
 	BatchNum    BatchNum             `json:"batch_num"`
 	AccountIdx  Idx                  `json:"account_idx"`
 	MerkleProof *CircomVerifierProof `gorm:"type:jsonb" json:"merkle_proof"`
-	Balance     string             `gorm:"type:numeric" json:"balance"`
+	Balance     string               `gorm:"type:numeric" json:"balance"`
 	// InstantWithdrawn is the ethBlockNum in which the exit is withdrawn
 	// instantly.  nil means this hasn't happened.
 	InstantWithdrawn *int64 `json:"instant_withdrawn"`
@@ -103,6 +105,27 @@ type ExitInfoGorm struct {
 	// from the delayedWithdrawn smart contract.  nil means this hasn't
 	// happened.
 	DelayedWithdrawn *int64 `json:"delayed_withdrawn"`
+}
+
+type ExitInfoGormV2 struct {
+	BatchNum    BatchNum             `json:"batch_num"`
+	AccountIdx  Idx                  `json:"account_idx"`
+	MerkleProof *CircomVerifierProof `gorm:"type:jsonb" json:"merkle_proof"`
+	Balance     string               `gorm:"type:numeric" json:"balance"`
+	// InstantWithdrawn is the ethBlockNum in which the exit is withdrawn
+	// instantly.  nil means this hasn't happened.
+	InstantWithdrawn *int64 `json:"instant_withdrawn"`
+	// DelayedWithdrawRequest is the ethBlockNum in which the exit is
+	// requested to be withdrawn from the delayedWithdrawn smart contract.
+	// nil means this hasn't happened.
+	DelayedWithdrawRequest *int64 `json:"delayed_withdraw_request"`
+	// DelayedWithdrawn is the ethBlockNum in which the exit is withdrawn
+	// from the delayedWithdrawn smart contract.  nil means this hasn't
+	// happened.
+	DelayedWithdrawn *int64                `json:"delayed_withdrawn"`
+	EthAddr          common.Address        `json:"ethAddr"`
+	BJJ              babyjub.PublicKeyComp `json:"bjj"`
+	TokenID          TokenID               `json:"tokenId"`
 }
 
 type CircomVerifierProof struct {

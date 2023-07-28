@@ -19,8 +19,8 @@ import (
 
 const (
 	syncingBlockCacheKey = "syncingBlock"
-	l1l2timeout          = 5000
-	maxTimeout           = 1000000
+	l1l2timeout          = 10
+	maxTimeout           = 100000
 )
 
 type job struct {
