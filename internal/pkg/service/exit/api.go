@@ -83,9 +83,8 @@ func getExitDataByEth(db *gorm.DB) gin.HandlerFunc {
 		ctx.Infoln(p.EthAddr)
 		query := ` select exit_trees.*, accounts.eth_addr, accounts.bjj ,accounts.token_id 
 		from exit_trees 
-		inner join txes on exit_trees.account_idx = txes.from_idx 
 		inner join accounts on accounts.idx = exit_trees.account_idx 
-		where txes.type = 'ForceExit' and accounts.eth_addr = ? and exit_trees.instant_withdrawn is null;`
+		where  accounts.eth_addr = ? and exit_trees.instant_withdrawn is null;`
 		var resp []model.ExitInfoGormV2
 		if err := db.Raw(query, common.HexToAddress(p.EthAddr)).Find(&resp).Error; err != nil {
 			ctx.Errorf("faild to get exit data, err: %v", err)
