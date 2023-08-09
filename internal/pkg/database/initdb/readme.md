@@ -30,7 +30,7 @@ create table if not exists batches (
   eth_block_num bigint not null,
   forger_addr bytea, -- fake foreign key for coordinator
   fees_collected bytea,
-  fee_idxs_coordinator bytea not null,
+  fee_idxs_coordinator bytea,
   state_root numeric not null,
   num_accounts bigint not NULL,
 	last_idx bigint not null,

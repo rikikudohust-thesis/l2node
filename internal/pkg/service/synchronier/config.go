@@ -24,7 +24,7 @@ type config struct {
 
 var configs = map[uint64]config{
 	model.ChainIDEthereum: {
-		StartBlock:                  3834530,
+		StartBlock:                  33651294,
 		L1TxEvent:                   ethCommon.HexToHash("0xdd5c7c5ea02d3c5d1621513faa6de53d474ee6f111eda6352a63e3dfe8c40119"),
 		ForgeBatch:                  ethCommon.HexToHash("0xe00040c8a3b0bf905636c26924e90520eafc5003324138236fddee2d34588618"),
 		AddToken:                    ethCommon.HexToHash("0xcb73d161edb7cd4fb1d92fedfd2555384fd997fd44ab507656f8c81e15747dde"),
