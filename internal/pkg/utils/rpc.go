@@ -13,6 +13,11 @@ import (
 	"github.com/ethereum/go-ethereum/ethclient"
 )
 
+const (
+	gasPrecision       = 1000
+	gasPriceMultiplier = 1.2
+)
+
 func GetEvmClient(ctx context.Context, rpcs []string) (*ethclient.Client, error) {
 	rpcsLen := len(rpcs)
 	indexRand, err := rand.Int(rand.Reader, big.NewInt(int64(rpcsLen)))
@@ -55,6 +60,8 @@ func SendTx(
 		fmt.Printf("failed to get gas price, err: %v", err)
 		return nil, err
 	}
+	gasPrice = gasPrice.Mul(gasPrice, big.NewInt(int64(gasPriceMultiplier*gasPrecision)))
+	gasPrice = gasPrice.Div(gasPrice, big.NewInt(gasPrecision))
 
 	gasLimit, err := client.EstimateGas(ctx, ethereum.CallMsg{
 		To:       &to,
@@ -72,8 +79,8 @@ func SendTx(
 		fmt.Printf("failed to sign tx, err: %v", err)
 		return nil, err
 	}
-  fmt.Println("tx: ", tx)
-  fmt.Println("Hash: ", signedTx.Hash().Hex())
+	fmt.Println("tx: ", tx)
+	fmt.Println("Hash: ", signedTx.Hash().Hex())
 
 	// signer := types.LatestSignerForChainID(big.NewInt(chainID))
 	// signedTxn, err := types.SignNewTx(prvKey, signer, &types.LegacyTx{

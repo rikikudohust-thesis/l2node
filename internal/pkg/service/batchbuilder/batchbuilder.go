@@ -176,17 +176,6 @@ func (j *job) forgeBatch(ctx context.Context, cfg *model.JobConfig, proof *Proof
 	proofB := [2][2]*big.Int{{proof.PiB[0][1], proof.PiB[0][0]}, {proof.PiB[1][1], proof.PiB[1][0]}}
 	proofC := [2]*big.Int{proof.PiC[0], proof.PiC[1]}
 
-	// hash, _ := zkInput.HashGlobalData()
-	// fmt.Printf("hash: %v", hash)
-	// fmt.Printf("last idx raw: %+v\n", zkInput.Metadata.NewLastIdxRaw.BigInt())
-	// fmt.Printf("last state raw: %+v\n", zkInput.Metadata.NewStateRootRaw.BigInt())
-	// fmt.Printf("last exit raw: %+v\n", zkInput.Metadata.NewExitRootRaw.BigInt())
-	// fmt.Printf("l1L2TxsData: %x\n", l1L2TxsData)
-	// fmt.Printf("l1Batch: %v\n", l1Batch)
-	// fmt.Printf("proofA: %+v\n", proofA)
-	// fmt.Printf("proofB: %+v\n", proofB)
-	// fmt.Printf("proofC: %+v\n", proofC)
-
 	data, err := j.abi.Pack(
 		"forgeBatch",
 		zkInput.Metadata.NewLastIdxRaw.BigInt(),
